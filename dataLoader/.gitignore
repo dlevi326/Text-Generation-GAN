@@ -1,4 +1,4 @@
-./newsfiles
-./sentencecorpus
+./newsfiles/
+./sentencecorpus/
 __pycache__
 *.pyc
