@@ -16,11 +16,11 @@ def load_data(dir,num=10):
     sents = dataset.loopFiles(dir,num)
     return sents
 
-def turn_sents_into_embeddings(keyed_vect_file,train_file,max_sent_len=15,embed_dim=50):
+def turn_sents_into_embeddings(keyed_vect_file,train_file,num=10,max_sent_len=15,embed_dim=50):
     model = getKeyedVect(keyed_vect_file)
     #print(model['hello'])
     #print(len(model.wv.vocab))
-    sentences = load_data(train_file)
+    sentences = load_data(train_file,num)
     sentences = sentences[0:2]
     tokens = []
     for s in sentences:
@@ -38,13 +38,13 @@ def turn_sents_into_embeddings(keyed_vect_file,train_file,max_sent_len=15,embed_
         #padding = max_sent_len-len(tempTokens)
         #tempTokens+=np.zeros([padding,embed_dim])
         tokens.append(tempTokens)
-    for sent in tokens:
-        print('*'*60)
-        print(sent)
-        print('len:',len(sent))
+    #for sent in tokens:
+    #    print('*'*60)
+    #    print(sent)
+    #    print('len:',len(sent))
     #tokens = np.reshape(tokens,[max_sent_len,50])
     #tokens = [t.lower() for t in tokens if t.lower() in model.wv.vocab]
-    return tokens
+    return tokens,model
 
 
 

@@ -2,3 +2,6 @@
 *.txt
 __pycache__
 *.pyc
+Report/
+*.zip
+gensimGan/generated_images/

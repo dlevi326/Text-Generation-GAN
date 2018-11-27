@@ -8,19 +8,31 @@ from tqdm import tqdm
 
 import sys
 sys.path.insert(0, '../gloveLoader/')
+sys.path.insert(0, '../dataLoader/')
+
 from loadGlove import loadGloveModel, getKeyedVect
+import load_data 
 
 
-
-
-
-print('Downloading mnist data...')
-mnist = tf.keras.datasets.mnist
-
-(x_train, y_train),(x_test, y_test) = mnist.load_data()
-x_train, x_test = x_train / 255.0, x_test / 255.0
-y_train_hot,y_test_hot = tf.one_hot(y_train,depth=len(y_train)),tf.one_hot(y_test,depth=len(y_train))
+print('Downloading data and turning into embeddings')
+KEYED_VECTOR = '../gloveloader/glove_50d_keyed.txt'
+TRAIN_FILE = '../dataLoader/newsfiles/newsfiles/'
+sent_embeddings,keyed_vect = load_data.turn_sents_into_embeddings(KEYED_VECTOR,TRAIN_FILE,num=100)
+# Each piece is 15x50
+x_train = sent_embeddings
 print('Finished downloading...')
+
+#w = np.zeros(50)
+#print(keyed_vect.similar_by_vector(w))
+
+
+#print('Downloading mnist data...')
+#mnist = tf.keras.datasets.mnist
+
+#(x_train, y_train),(x_test, y_test) = mnist.load_data()
+#x_train, x_test = x_train / 255.0, x_test / 255.0
+#y_train_hot,y_test_hot = tf.one_hot(y_train,depth=len(y_train)),tf.one_hot(y_test,depth=len(y_train))
+#print('Finished downloading...')
 
 r = 0
 def next_batch(data,size):
@@ -30,6 +42,14 @@ def next_batch(data,size):
     x_train_batch = data[size*r:r*size+size, :]
     r = r+1
     return x_train_batch
+
+def find_sim_sent(sent_mat,keyed_vect):
+    zero_vect = np.zeros([1,50])
+    for ind,n in enumerate(sent_mat):
+        if(n==zero_vect):
+            break
+        sent_mat[ind] = keyed_vect.similar_by_vector(n)[0][0]
+    return sent_mat
 
 def init_weights(shape):
     return tf.Variable(tf.random_normal(shape, stddev=0.1))
@@ -42,8 +62,8 @@ class Generator:
         with tf.variable_scope('g'):
             self.gW1 = init_weights([100,256])
             self.gb1 = init_bias([256])
-            self.gW2 = init_weights([256,784])
-            self.gb2 = init_bias([784])
+            self.gW2 = init_weights([256,750])
+            self.gb2 = init_bias([750])
 
     def forward(self, z, training=True):
         fc1 = tf.matmul(z, self.gW1) + self.gb1
@@ -51,6 +71,8 @@ class Generator:
         fc1 = tf.nn.leaky_relu(fc1)
         fc2 = tf.nn.sigmoid(tf.matmul(fc1, self.gW2)+self.gb2)
         # Sigmoid produces output between 0-1 same as mnist
+        #print(fc2.shape)
+        fc2 = find_sim_sent(tf.reshape(fc2,[-1,15,50]),keyed_vect)
         return fc2
 
 class Discriminator:
@@ -61,19 +83,19 @@ class Discriminator:
             self.dW2 = init_weights([3,3,16,32])
             self.db2 = init_bias([32])
 
-            self.W3 = init_weights([1568,128])
+            self.W3 = init_weights([1500,128])
             self.b3 = init_bias([128])
             self.W4 = init_weights([128,1])
             self.b4 = init_bias([1])
 
     def forward(self, X):
-        self.X = tf.reshape(X, shape=[-1,28,28,1])
-        conv1 = tf.nn.leaky_relu(tf.nn.conv2d(self.X, self.dW1, strides=[1,2,2,1], padding='SAME') + self.db1)
+        self.X = tf.reshape(X, shape=[-1,15,50,1])
+        conv1 = tf.nn.leaky_relu(tf.nn.conv2d(self.X, self.dW1, strides=[1,1,1,1], padding='SAME') + self.db1)
         conv1 = tf.contrib.layers.batch_norm(conv1,trainable=True)
-        conv2 = tf.nn.leaky_relu(tf.nn.conv2d(conv1, self.dW2, strides=[1,2,2,1], padding='SAME')+self.db2)
+        conv2 = tf.nn.leaky_relu(tf.nn.conv2d(conv1, self.dW2, strides=[1,1,1,1], padding='SAME')+self.db2)
         #conv2 = tf.layers.batch_normalization(conv2,True)
         conv2 = tf.contrib.layers.batch_norm(conv2, trainable=True)
-        conv2 = tf.reshape(conv2, shape=[-1,7*7*32])
+        conv2 = tf.reshape(conv2, shape=[-1,15*50*2])
 
         fc1 = tf.nn.leaky_relu(tf.matmul(conv2,self.W3)+self.b3)
         logits = tf.matmul(fc1, self.W4)+self.b4
@@ -87,7 +109,7 @@ def cost(logits, labels):
 d = Discriminator()
 g = Generator()
 
-phX = tf.placeholder(tf.float32, [None,784])
+phX = tf.placeholder(tf.float32, [None,750])
 phZ = tf.placeholder(tf.float32, [None, 100])
 
 G_out = g.forward(phZ)
@@ -109,7 +131,7 @@ lr = 0.001
 
 
 # Pretraining epochs out of total epochs [After pretraining images are generated]
-pretrain_epochs = 10000
+pretrain_epochs = 10
 batch_size = 50
 
 # Epochs per label
@@ -131,50 +153,57 @@ if not os.path.exists('generated_images/'):
 
 # Start training
 with tf.Session() as sess:
-    for i in range(10):
-        sess.run(init)
-        # New init after each label
+    
+    sess.run(init)
 
-        k = 0
-        l = 10
-        data = x_train[y_train == i].reshape([-1,28*28])
-        # Get data for specific label
-        print(f'Starting training for label {i} . . .')
-        g_cost = []
-        d_cost = []
+    data = np.array(x_train).reshape(-1,750)
+    # Get data for specific label
+    
+    g_cost = []
+    d_cost = []
 
-        for j in tqdm(range(epochs)):
-            batch_x = next_batch(data,batch_size)
+    k=0
+    for j in tqdm(range(epochs)):
+        batch_x = next_batch(data,batch_size)
 
-            batch_z = np.random.randn(batch_size,100)
+        batch_z = np.random.randn(batch_size,100)
 
-            # Training discriminator
-            _, d_loss = sess.run([D_train, D_loss], feed_dict={phX:batch_x,phZ: batch_z})
+        # Training discriminator
+        _, d_loss = sess.run([D_train, D_loss], feed_dict={phX:batch_x,phZ: batch_z})
 
-            # Training generator
-            _, g_loss = sess.run([G_train, G_loss], feed_dict={phZ:batch_z})
+        # Training generator
+        _, g_loss = sess.run([G_train, G_loss], feed_dict={phZ:batch_z})
 
-            # Applied loss for later plotting
-            d_cost.append(d_loss)
-            g_cost.append(g_loss)
+        # Applied loss for later plotting
+        d_cost.append(d_loss)
+        g_cost.append(g_loss)
 
-            # Image generation countdown
-            if j% pretrain_epochs//10 == 0 and j<pretrain_epochs:
-                print(f'Pretraining. Generating images for label {i} in {l}.')
-                l = l-1
+        # Generating images
+        if j%10 ==0 and j>=pretrain_epochs:
+            #sample_z = np.random.randn(1,100)
+            sample_z = np.zeros([1,100])
 
-            # Generating images
-            if j%10 ==0 and j>=pretrain_epochs:
-                sample_z = np.random.randn(1,100)
+            gen_sample = sess.run(G_out_sample, feed_dict={phZ:sample_z})
 
-                gen_sample = sess.run(G_out_sample, feed_dict={phZ:sample_z})
+            # Print iteration and costs
+            print(f'Iteration {j}. G_loss {g_loss}. D_loss {d_loss}')
 
-                # Print iteration and costs
-                print(f'Iteration {j}. G_loss {g_loss}. D_loss {d_loss}')
+            # save image
+            #image = plt.imshow(gen_sample.reshape(15,50), cmap='Greys_r')
+            newSentence = gen_sample.reshape(15,50)
+            for n in newSentence:
+                print(keyed_vect.similar_by_vector(n)[0][0],end=' ')
+            print()
 
-                # save image
-                image = plt.imshow(gen_sample.reshape(28,28), cmap='Greys_r')
-                plt.savefig(f'generated_images/Sample{i}_{k+1}.png')
-                k +=1
+            plt.savefig(f'generated_images/Sample_{k+1}.png')
+            k +=1
+    plt.plot(d_cost)
+    plt.plot(g_cost)
+    #plt.xlim([0,10])
+    plt.ylim([-1,5])
+    plt.xlabel('Loss')
+    plt.ylabel('Epochs')
+    plt.title('Generator and Discriminator loss with no search during training')
+    plt.show()
 
 print('done')

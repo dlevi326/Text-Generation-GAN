@@ -48,5 +48,5 @@ if __name__=='__main__':
     for w in words:
         new_sim_sent+=gensim_model.most_similar(positive=w)[0][0]
         new_sim_sent+=' '
-    print(new_sim_sent)
+    #print(new_sim_sent)
     #print(gensim_model.most_similar(positive=words))
