@@ -16,23 +16,13 @@ import load_data
 
 print('Downloading data and turning into embeddings')
 KEYED_VECTOR = '../gloveloader/glove_50d_keyed.txt'
-TRAIN_FILE = '../dataLoader/newsfiles/newsfiles/'
-sent_embeddings,keyed_vect = load_data.turn_sents_into_embeddings(KEYED_VECTOR,TRAIN_FILE,num=100)
+TRAIN_FILE = '../dataLoader/newsfiles/technology/'
+sent_embeddings,keyed_vect = load_data.turn_sents_into_embeddings(KEYED_VECTOR,TRAIN_FILE,num=1000)
 # Each piece is 15x50
 x_train = sent_embeddings
 print('Finished downloading...')
 
-#w = np.zeros(50)
-#print(keyed_vect.similar_by_vector(w))
 
-
-#print('Downloading mnist data...')
-#mnist = tf.keras.datasets.mnist
-
-#(x_train, y_train),(x_test, y_test) = mnist.load_data()
-#x_train, x_test = x_train / 255.0, x_test / 255.0
-#y_train_hot,y_test_hot = tf.one_hot(y_train,depth=len(y_train)),tf.one_hot(y_test,depth=len(y_train))
-#print('Finished downloading...')
 
 r = 0
 def next_batch(data,size):
@@ -69,10 +59,7 @@ class Generator:
         fc1 = tf.matmul(z, self.gW1) + self.gb1
         fc1 = tf.layers.batch_normalization(fc1, training = training)
         fc1 = tf.nn.leaky_relu(fc1)
-        fc2 = tf.nn.sigmoid(tf.matmul(fc1, self.gW2)+self.gb2)
-        # Sigmoid produces output between 0-1 same as mnist
-        #print(fc2.shape)
-        fc2 = find_sim_sent(tf.reshape(fc2,[-1,15,50]),keyed_vect)
+        fc2 = (tf.matmul(fc1, self.gW2)+self.gb2)
         return fc2
 
 class Discriminator:
@@ -93,7 +80,6 @@ class Discriminator:
         conv1 = tf.nn.leaky_relu(tf.nn.conv2d(self.X, self.dW1, strides=[1,1,1,1], padding='SAME') + self.db1)
         conv1 = tf.contrib.layers.batch_norm(conv1,trainable=True)
         conv2 = tf.nn.leaky_relu(tf.nn.conv2d(conv1, self.dW2, strides=[1,1,1,1], padding='SAME')+self.db2)
-        #conv2 = tf.layers.batch_normalization(conv2,True)
         conv2 = tf.contrib.layers.batch_norm(conv2, trainable=True)
         conv2 = tf.reshape(conv2, shape=[-1,15*50*2])
 
@@ -131,7 +117,7 @@ lr = 0.001
 
 
 # Pretraining epochs out of total epochs [After pretraining images are generated]
-pretrain_epochs = 10
+pretrain_epochs = 1000
 batch_size = 50
 
 # Epochs per label
@@ -146,10 +132,6 @@ D_train = tf.train.AdamOptimizer(lr).minimize(D_loss, var_list=dvars)
 G_train = tf.train.AdamOptimizer(lr).minimize(G_loss, var_list=gvars)
 
 init = tf.global_variables_initializer()
-
-# Generate folder for output
-if not os.path.exists('generated_images/'):
-    os.makedirs('generated_images/')
 
 # Start training
 with tf.Session() as sess:
@@ -180,8 +162,9 @@ with tf.Session() as sess:
 
         # Generating images
         if j%10 ==0 and j>=pretrain_epochs:
-            #sample_z = np.random.randn(1,100)
-            sample_z = np.zeros([1,100])
+            final_sent = []
+            sample_z = np.random.randn(1,100)*10
+            #sample_z = np.zeros([1,100])
 
             gen_sample = sess.run(G_out_sample, feed_dict={phZ:sample_z})
 
@@ -189,21 +172,23 @@ with tf.Session() as sess:
             print(f'Iteration {j}. G_loss {g_loss}. D_loss {d_loss}')
 
             # save image
-            #image = plt.imshow(gen_sample.reshape(15,50), cmap='Greys_r')
             newSentence = gen_sample.reshape(15,50)
             for n in newSentence:
                 print(keyed_vect.similar_by_vector(n)[0][0],end=' ')
+                final_sent.append(n)
             print()
-
-            plt.savefig(f'generated_images/Sample_{k+1}.png')
-            k +=1
     plt.plot(d_cost)
     plt.plot(g_cost)
     #plt.xlim([0,10])
-    plt.ylim([-1,5])
-    plt.xlabel('Loss')
-    plt.ylabel('Epochs')
+    #plt.ylim([-1,5])
+    plt.ylabel('Loss')
+    plt.xlabel('Epochs')
     plt.title('Generator and Discriminator loss with no search during training')
     plt.show()
 
 print('done')
+
+#print('but',keyed_vect['but'])#keyed_vect.similar_by_vector('hello')[0])
+
+#for i in final_sent:
+#    print(keyed_vect.similar_by_vector(i)[0][0],' ',i)
